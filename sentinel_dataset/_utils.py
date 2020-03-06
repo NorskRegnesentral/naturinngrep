@@ -87,9 +87,9 @@ def parse_eodata_folder_name(name):
         out['product_discriminator'] = _sentinel_datetime_2_np_datetime(name_parts[6])
 
         #We only support the new format
-        #TODO: add support for older sentinel 1 name formats
-        if not out['product_discriminator']>np.datetime64('2016-12-06T00:00:00'):
-            raise NotImplementedError('parse_eodata_folder_name() does not support sentinel-2 data earlier than 6th of December 2016')
+        #TODO: add support for older sentinel 2 name formats
+        #if not out['product_discriminator']>np.datetime64('2016-12-06T00:00:00'):
+        #    raise NotImplementedError('parse_eodata_folder_name() does not support sentinel-2 data earlier than 6th of December 2016')
 
         out['misson_id'] = name_parts[0]
         out['product_level'] = name_parts[1][3:]

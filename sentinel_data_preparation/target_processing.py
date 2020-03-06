@@ -19,11 +19,13 @@ class TargetProcessing():
             return -1
 
         # Read target data
-        target_filename = os.path.join(self.params['target_dir'], tile_id.lower() + "_"
-                                       + self.params['target_basename'] + ".tif")
+        # target_filename = os.path.join(self.params['target_dir'], tile_id.lower() + "_"
+        #                                + self.params['target_basename'] + ".tif")
+        target_filename = os.path.join(self.params['target_dir'], self.params['target_prefix'] + "_" + tile_id + "_"
+                                       + self.params['target_postfix'] + ".tif")
         with rasterio.open(target_filename) as target_file:
             target_data = target_file.read()
-
+            target_data = target_data.astype(np.float32)
 
             # Create a boolean mask
             mask = np.zeros(target_data[0].shape).astype(np.bool)

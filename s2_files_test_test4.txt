@@ -1,0 +1,8 @@
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2A_MSIL1C_20150730T103016_N0204_R108_T34WFD_20150730T103016.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2A_MSIL1C_20150805T105026_N0204_R051_T34WFD_20150805T105026.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2A_MSIL1C_20160806T104032_N0204_R008_T34WFD_20160806T104026.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2A_MSIL1C_20160819T105032_N0204_R051_T34WFD_20160819T105029.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2A_MSIL1C_20170930T104021_N0205_R008_T34WFD_20170930T104019.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2B_MSIL1C_20170701T102029_N0205_R065_T34WFD_20170701T102023.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2B_MSIL1C_20180729T103019_N0206_R108_T34WFD_20180729T143053.SAFE
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/test4/S2B_MSIL1C_20180910T104019_N0206_R008_T34WFD_20180910T161121.SAFE

@@ -10,76 +10,62 @@ from dlt.basic.pytorch_utils import torch_to_np, np_to_torch
 from dlt.basic.summary import regression_summary, classification_summary
 from dlt.basic.unet import UNet
 from sentinel_dataset import Dataset
+
 import os
 
 data_bands = ['B02', 'B03', 'B04', 'B08', 'B05', 'B06', 'B07', 'B8A', 'B11', 'B12']
 
 
 GPU_NO = 0
-batch_size = 8
+batch_size = 16
 win_size = [256, 256]
-n_iteration = 30000
-lr = 0.00004
+n_iteration = 5000
+lr = 0.0004
 
-# We showcase to simple examples; cloud detection and atmospheric correction. These tasks can easily be replaced by
-# other tasks if required  by replacing the labels. Labels may be provided as GeoTiffs and converted to the np-memmap-
-# structure with the data-preparation tools.
 
 #Make output folder
 if not os.path.isdir('saved_models'):
     os.mkdir('saved_models')
 
-#Select which mode
-if len(sys.argv) <2:
-    sys.argv.append(2)
 
-#Cloud detection (classification problem)
-if int(sys.argv[1])==1:
-    label_bands = ['cloud_mask']
-    output_path = 'saved_models/cloud_detection.pt'
+label_bands = ['roads']
+output_path = 'saved_models/saved_model_new.pt'
 
-    criterion = CrossEntropyLoss()
-    summary = classification_summary
-    n_outputs = 2
-    mask_clouds=False
+criterion = CrossEntropyLoss()
+summary = classification_summary
+n_outputs = 2
+mask_clouds = True
+change_class_numbers = True
 
-    training_tiles = ["T29SQB","T29SQC","T30STJ"]
-    validation_tiles = ["T29TPE"]
-
-#Atmospheric correction (regression problem)
-else:
-    label_bands = ['B02'] #It is possible to add more bands here...
-    output_path = 'saved_models/atmospheric_correction_b02.pt'
-
-    criterion = MSELoss()
-    summary = regression_summary
-    n_outputs = len(label_bands)
-    mask_clouds = True
-
-    training_tiles = ["T32TMP","T32TNS","T32TNP","T32TPR","T32TML","T32TMK","T32TNT","T32UPU","T32TPT","T32UQU"]
-    validation_tiles = ["T32UNU","T32TMN"]
-
+training_tiles = ['T32VLK_20170705T105026','T32VLK_20180608T112325', 'T32VLK_20190710T125432',
+                  'T32VLL_20170705T105026', 'T32VLL_20190628T131710', 'T32VNR_20170630T105305',
+                  'T32VNR_20170721T110758', 'T32VNR_20180705T130423', 'T32VNR_20190726T122036',
+                  'T33WXT_20150822T104035', 'T33WXT_20160723T105623', 'T33WXT_20180728T131913',
+                  'T33WXT_20190718T113853']
+validation_tiles = ['T33WWS_20170725T105028', 'T33WWS_20180701T145738', 'T33WWS_20190615T110207']
 
 #Model and optimizer
-model = UNet(num_classes=n_outputs, in_channels=len(data_bands)).cuda(GPU_NO)
+model = UNet(in_channels=len(data_bands), n_classes=n_outputs, use_bn=True).cuda(GPU_NO)
 optimizer = Adam(model.parameters(),lr=lr)
 
-# Datasets (T32TMM is reserved for test for the atmospheric correction setup)
-train_dataset = Dataset([os.path.join('data',p) for p in training_tiles],
+# Datasets
+train_dataset = Dataset([os.path.join('data', p) for p in training_tiles],
                         band_identifiers=data_bands,
                         label_identifiers=label_bands,
                         )
 
-val_dataset = Dataset([os.path.join('data',p) for p in validation_tiles],
+val_dataset = Dataset([os.path.join('data', p) for p in validation_tiles],
                       band_identifiers=data_bands,
                       label_identifiers=label_bands,
                       )
 
 #Traing steps
+acc = 0.0
 for iteration in range(n_iteration+1):
     model.train()
 
-    data, target = make_batch(train_dataset, win_size, batch_size, mask_clouds=mask_clouds)
+    data, target = make_batch(train_dataset, win_size, batch_size,
+                              mask_clouds=mask_clouds, change_class_numbers=change_class_numbers)
 
     #Put data on gpu
     data = np_to_torch(data).cuda(GPU_NO)
@@ -104,7 +90,7 @@ for iteration in range(n_iteration+1):
     summary(iteration, 'Training', data, target, pred, loss)
 
 
-    #Print results for validation every 100th epoch
+    #Print results for validation every 500th epoch
     if iteration%500==0:
         model.eval()
 
@@ -113,7 +99,8 @@ for iteration in range(n_iteration+1):
         target = []
         data = []
         for i in range(50):
-            d, t = make_batch(val_dataset, win_size, batch_size)
+            d, t = make_batch(val_dataset, win_size, batch_size,
+                              mask_clouds=mask_clouds, change_class_numbers=change_class_numbers)
             p = torch_to_np(model(np_to_torch(d).cuda(GPU_NO)))
 
             pred.append(p)
@@ -124,7 +111,10 @@ for iteration in range(n_iteration+1):
         target = np.concatenate(target, 0)
         data = np.concatenate(data, 0)
 
-        summary(iteration, 'Validation', data, target, pred)
+        acc_i = summary(iteration, 'Validation', data, target, pred)
 
-        torch.save(model.state_dict(), output_path)
-        print('Saving model at iteration', iteration)
+        if acc_i >= acc:
+            torch.save(model.state_dict(), output_path)
+            acc = acc_i
+            print('Saving model at iteration', iteration)
+

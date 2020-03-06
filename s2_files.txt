@@ -1,0 +1,2 @@
+/nr/samba/jodata2/pro/naturinngrep/usr/arnt/sentinel2_data/S2A_MSIL1C_20190718T105621_N0208_R094_T33WXT_20190718T113853.SAFE
+

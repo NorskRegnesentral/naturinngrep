@@ -1,14 +1,13 @@
 import numpy as np
 
-def make_batch(ds, win_size, batch_size, mask_clouds=True):
+def make_batch(ds, win_size, batch_size, mask_clouds=True, change_class_numbers=False):
 
     data = []
     target = []
 
     for i in range(batch_size):
         sample = ds[ np.random.randint(len(ds)) ]
-        x,y = sample['coord']
-        x, y = sample['coord']
+        y, x = sample['coord']
 
         #Get data channels
         d = [band[y+(-win_size[0]//2): y+(win_size[0]//2), x+(-win_size[1]//2): x+(win_size[1]//2)] for band in sample['data']]
@@ -25,6 +24,13 @@ def make_batch(ds, win_size, batch_size, mask_clouds=True):
             missing_data = sample['missing_data_mask'][0][y + (-win_size[0] // 2): y + (win_size[0] // 2), x + (-win_size[1] // 2): x + (win_size[1] // 2)]
             missing_data = np.expand_dims(missing_data, 0).squeeze(-1)
             d[missing_data==True] = -100
+
+        if change_class_numbers:
+            lbl = d
+            lbl[lbl == 1] = 0
+            lbl[lbl == 2] = 1
+            d = lbl
+
 
         target.append(np.expand_dims(d, 0))
 

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 import torch.nn.functional as F
 from torch.autograd import Variable
 from collections import OrderedDict
@@ -26,6 +27,14 @@ def upconv2x2(in_channels, out_channels, mode='transpose'):
             out_channels,
             kernel_size=2,
             stride=2)
+
+    elif mode == 'nearest':
+        # out_channels is always going to be the same
+        # as in_channels
+        return nn.Sequential(
+            nn.Upsample(mode='nearest', scale_factor=2),
+            conv1x1(in_channels, out_channels))
+
     else:
         # out_channels is always going to be the same
         # as in_channels
@@ -49,25 +58,32 @@ class DownConv(nn.Module):
     A ReLU activation follows each convolution.
     """
 
-    def __init__(self, in_channels, out_channels, pooling=True):
+    def __init__(self, in_channels, out_channels, pooling=True, use_bn=False):
         super(DownConv, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.pooling = pooling
 
-        self.conv1 = conv3x3(self.in_channels, self.out_channels)
-        self.conv2 = conv3x3(self.out_channels, self.out_channels)
+        self.conv1 = conv3x3(self.in_channels, self.out_channels, bias=not (use_bn))
+        self.conv2 = conv3x3(self.out_channels, self.out_channels, bias=not (use_bn))
 
-        self.bn1 = nn.BatchNorm2d(self.out_channels)
-        self.bn2 = nn.BatchNorm2d(self.out_channels)
+        self.use_bn = use_bn
+        if use_bn:
+            self.bn1 = nn.BatchNorm2d(self.out_channels)
+            self.bn2 = nn.BatchNorm2d(self.out_channels)
 
         if self.pooling:
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
+        if self.use_bn:
+            x = F.relu(self.bn1(self.conv1(x)))
+            x = F.relu(self.bn2(self.conv2(x)))
+        else:
+            x = F.relu(self.conv1(x))
+            x = F.relu(self.conv2(x))
+
         before_pool = x
         if self.pooling:
             x = self.pool(x)
@@ -132,16 +148,16 @@ class UNet(nn.Module):
     (3) residual connections can be used by specifying
         UNet(merge_mode='add')
     (4) if non-parametric upsampling is used in the decoder
-        pathway (specified by upmode='upsample'), then an
+        pathway (specified by upmode='nearest'/'bilinear'), then an
         additional 1x1 2d convolution occurs after upsampling
         to reduce channel dimensionality by a factor of 2.
         This channel halving happens with the convolution in
         the tranpose convolution (specified by upmode='transpose')
     """
 
-    def __init__(self, num_classes, in_channels=3, depth=5,
+    def __init__(self, n_classes=2, in_channels=1, depth=5,
                  start_filts=64, up_mode='transpose',
-                 merge_mode='concat'):
+                 merge_mode='concat', use_bn=False):
         """
         Arguments:
             in_channels: int, number of channels in the input tensor.
@@ -150,10 +166,15 @@ class UNet(nn.Module):
             start_filts: int, number of convolutional filters for the
                 first conv.
             up_mode: string, type of upconvolution. Choices: 'transpose'
-                for transpose convolution or 'upsample' for nearest neighbour
+                for transpose convolution or 'nearest' /'bilinear' for nearest neighbour or bilinear
                 upsampling.
         """
         super(UNet, self).__init__()
+
+        self.fow = [2 ** (depth + 1), 2 ** (
+                    depth + 1)]  # Minimum recommended input size ( 2**(depth-1) will also work, but is then dominated by edge effects)
+        self.pad = [0, 0]
+        self.valid = False
 
         if up_mode in ('transpose', 'upsample'):
             self.up_mode = up_mode
@@ -178,10 +199,10 @@ class UNet(nn.Module):
                              "nearest neighbour to reduce "
                              "depth channels (by half).")
 
-        self.num_classes = num_classes
         self.in_channels = in_channels
         self.start_filts = start_filts
         self.depth = depth
+        self.n_classes = n_classes
 
         self.down_convs = []
         self.up_convs = []
@@ -192,7 +213,7 @@ class UNet(nn.Module):
             outs = self.start_filts * (2 ** i)
             pooling = True if i < depth - 1 else False
 
-            down_conv = DownConv(ins, outs, pooling=pooling)
+            down_conv = DownConv(ins, outs, pooling=pooling, use_bn=use_bn)
             self.down_convs.append(down_conv)
 
         # create the decoder pathway and add to a list
@@ -204,19 +225,20 @@ class UNet(nn.Module):
                              merge_mode=merge_mode)
             self.up_convs.append(up_conv)
 
-        self.conv_final = conv1x1(outs, self.num_classes)
-
         # add the list of modules to current module
-        self.down_convs = nn.ModuleList(self.down_convs)
-        self.up_convs = nn.ModuleList(self.up_convs)
+        self.down_convs = nn.Sequential(*self.down_convs)
+        self.up_convs = nn.Sequential(*self.up_convs)
+
+        self.conv_final = conv1x1(outs, n_classes)
 
         self.reset_params()
 
     @staticmethod
     def weight_init(m):
         if isinstance(m, nn.Conv2d):
-            init.xavier_normal_(m.weight)
-            init.constant_(m.bias, 0)
+            nn.init.xavier_normal_(m.weight)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
     def reset_params(self):
         for i, m in enumerate(self.modules()):
@@ -238,15 +260,64 @@ class UNet(nn.Module):
         # nn.CrossEntropyLoss is your training script,
         # as this module includes a softmax already.
         x = self.conv_final(x)
+
         return x
+
+    def get_valid_loss(self, loss):
+        class Loss(nn.Module):
+            def __init__(self, loss, p):
+                super(Loss, self).__init__()
+
+                self.loss = loss
+                self.p = p
+
+            def forward(self, x, y, weight=None):
+                p = self.p
+                if weight is None:
+                    return self.loss.forward(x[:, :, p:-p, p:-p], y[:, :, p:-p, p:-p])
+
+                else:
+                    return self.loss.forward(x[:, :, p:-p, p:-p], y[:, :, p:-p, p:-p], weight[:, :, p:-p, p:-p])
+
+        return Loss(loss, 2 ** (self.depth + 1) // 2)
 
 
 if __name__ == "__main__":
     """
+
     testing
+
     """
-    model = UNet(3, depth=5, merge_mode='concat')
-    x = Variable(torch.FloatTensor(np.random.random((1, 3, 320, 320))))
+    depth = 5
+    model = UNet(3, depth=depth, merge_mode='concat')
+    x = Variable(torch.FloatTensor(np.random.random((1, 1, 2 ** (depth), 2 ** (depth)))))
     out = model(x)
-    loss = torch.sum(out)
-    loss.backward()
+    print(out.shape)
+
+    # Visualize receptive field
+    import dlt.utils.receptive_field as rf
+
+
+    def down_conv(win, no):
+        print('DownConv', no)
+        win = rf.receptiveField(win, 'conv1', k=3, s=1, p=1)
+        win = rf.receptiveField(win, 'conv2', k=3, s=1, p=1)
+        win = rf.receptiveField(win, 'pool', k=2, s=2, p=0)
+        return win
+
+
+    def up_conv(win, no):
+        print('UpConv', no)
+        win = rf.receptiveField(win, 'upconv', k=2, s=-2, p=0)
+        win = rf.receptiveField(win, 'conv1', k=3, s=1, p=1)
+        win = rf.receptiveField(win, 'conv2', k=3, s=1, p=1)
+        return win
+
+
+    win = int(2 ** (depth + 2))
+    win = rf.receptiveField(win, 'Input', start=True)
+    for i in range(depth):
+        win = down_conv(win, i)
+
+    for i in range(depth):
+        win = up_conv(win, i)

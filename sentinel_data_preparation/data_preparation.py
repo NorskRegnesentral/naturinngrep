@@ -64,13 +64,14 @@ class DataPreparation():
             input_file = filename.strip('\n')
 
             if self.sensor == "sentinel-2":
-                self.sen_pro.process_data(input_file)
+                error = self.sen_pro.process_data(input_file)
+                # error = 0
+                if error != 1: #no errors
+                    if self.params.get('process_clouds', "no") == "yes":
+                        self.sen_pro.process_clouds(input_file)
 
-                if self.params.get('process_clouds', "no") == "yes":
-                    self.sen_pro.process_clouds(input_file)
-
-                if self.params.get('process_target_data', "no") == "yes":
-                    self.target_pro.process_target_data(input_file)
+                    if self.params.get('process_target_data', "no") == "yes":
+                        self.target_pro.process_target_data(input_file)
 
 
             if self.sensor == "sentinel-1":

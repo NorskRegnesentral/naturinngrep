@@ -26,7 +26,7 @@ class Tile(object):
         print(' - DataFile: Opening', self.name, self.path)
 
         #Load meta data
-        with np.load( os.path.join(self.path, 'meta_data.npz')) as f:
+        with np.load( os.path.join(self.path, 'meta_data.npz'), allow_pickle=True) as f:
             try:
                 self.meta_data = f['meta_data'][()]
             except:
